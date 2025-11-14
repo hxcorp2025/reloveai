@@ -1,0 +1,233 @@
+You are Replit Agent. Create a production-ready **MVP skeleton** for a project called **RELOVE AI**.
+
+## Goal
+Build a full-stack app (backend + minimal frontend) that exposes three JSON APIs and a tiny UI to exercise them. This is a daily-execution coach for breakup recovery. The OpenAI agent (already set up on the OpenAI Platform) will be integrated later via PROMPT_ID; for V1 you must provide both:
+- **Rule-based responses** (deterministic, cheap).
+- **Optional passthrough** endpoint to call OpenAI Responses API using a saved `PROMPT_ID` (env).
+
+## Tech stack
+- **Backend:** Node.js + Express.
+- **Frontend:** React + Vite.
+- **Tooling:** TypeScript across both, ESLint + Prettier, Vitest for unit tests.
+- **Runtime:** Port 3000 for the API, frontend served via Vite dev server on 5173 in dev; in prod, serve the built frontend via Express static.
+- **Env:** `.env` and `.env.example`.
+
+## Repository layout
+/server
+index.ts
+routes/
+health.ts
+selectDailyAction.ts
+safeTextRewrite.ts
+greenlight.ts
+agentPassthrough.ts
+lib/
+rules/
+dailyAction.ts
+greenlight.ts
+safeText.ts
+types.ts
+tests/
+rules.test.ts
+package.json
+tsconfig.json
+/web
+src/
+App.tsx
+main.tsx
+components/
+DailyActionForm.tsx
+SafeTextForm.tsx
+GreenlightForm.tsx
+Card.tsx
+index.html
+vite.config.ts
+package.json
+tsconfig.json
+.eslintrc.cjs
+.prettierrc
+README.md
+.env.example
+
+csharp
+Copiar código
+
+## Environment variables
+Create `.env.example` with:
+OPENAI_API_KEY=
+PROMPT_ID=pmpt_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx # replace with real prompt id
+USE_OPENAI_SAFE=false # if true, safetext uses OpenAI instead of local rules
+PORT=3000
+
+pgsql
+Copiar código
+
+## Backend requirements
+1) **Health check**
+- `GET /api/health` → `{ "ok": true, "service": "relove-ai", "time": "<iso>" }`.
+
+2) **POST /api/select_daily_action**
+- **Input JSON:**
+```json
+{ "scenario":"hot_cold","day_index":3,"last_contact_hours":56,"last_response_from_her":"neutral","emotional_checkin":"calm" }
+Output JSON (schema):
+
+json
+Copiar código
+{
+  "action":"message | silence | mission",
+  "title":"string",
+  "content":"string",
+  "why":"short rationale (timing/neuro/step)",
+  "momentum":{"type":"create|maintain|regain","level":1},
+  "sources":["(optional, e.g. 'Text Chemistry – 60 Messages')"]
+}
+Rule-of-thumb (implement deterministic rules in lib/rules/dailyAction.ts):
+
+Days 1–7 → prefer "silence" or "mission" (stabilize, self-care, journal, walk).
+
+If last_response_from_her is "positive" AND last_contact_hours >= 48 → allow "message" (light check-in).
+
+If "neutral" AND last_contact_hours >= 48 → "message" with curiosity and no pressure.
+
+Else → "mission".
+
+POST /api/safetext_rewrite
+
+Input:
+
+json
+Copiar código
+{ "text":"I miss you so much, please reply to me, I can't live without you." }
+Output:
+
+json
+Copiar código
+{
+  "score": 0,
+  "issues": ["neediness","pressure"],
+  "rewritten": "Hey, just thought of you today — made me smile. Hope you're well!",
+  "alternatives": ["Had a small win today and it reminded me of you. Hope your week is going smoothly."],
+  "notes": ["keep it light; no demands"]
+}
+Implement heuristic rewrite in lib/rules/safeText.ts: strip begging/ultimatums/jealousy; add curiosity, warmth, respect. If USE_OPENAI_SAFE=true, call OpenAI Responses API with PROMPT_ID and ask for SafeText JSON (structured output). Otherwise, return rule-based rewrite.
+
+POST /api/greenlight
+
+Input:
+
+json
+Copiar código
+{ "scenario":"blocked","silence_hours":72,"last_response_from_her":"none","relapse_today":false,"emotional_checkin":"calm" }
+Output:
+
+json
+Copiar código
+{ "light":"red|yellow|green","reason":"string","wait_hours":0,"next_step":"string","risk_flags":["relapse"] }
+Implement rules in lib/rules/greenlight.ts:
+
+red if scenario==="blocked" OR relapse_today===true OR silence_hours < 24 OR last response "negative".
+
+green if last response "positive" AND silence_hours >= 48 AND checkin "calm".
+
+yellow otherwise. Provide next_step guidance.
+
+POST /api/agent
+
+Passthrough to OpenAI Responses API using PROMPT_ID. Body:
+
+json
+Copiar código
+{ "input": "free-form user text like: Day 3 action (hot_cold) — return JSON" }
+Return response.output_text OR response.output as JSON. This will later leverage File Search (vector store) attached to the prompt.
+
+Enable CORS for http://localhost:5173 and process.env.ALLOWED_ORIGINS (comma-separated).
+
+Provide package.json scripts (server):
+
+json
+Copiar código
+{ "scripts": { "dev":"tsx watch index.ts", "start":"node dist/index.js", "build":"tsc", "test":"vitest" } }
+Install: express cors body-parser dotenv openai zod tsx typescript vitest @types/node @types/express.
+
+Frontend requirements (React + Vite)
+Create a clean, responsive UI with three cards:
+
+Action of the Day form (scenario, day, last_contact_hours, last_response, emotional_checkin) → calls /api/select_daily_action, shows result with Copy button.
+
+SafeText textarea → calls /api/safetext_rewrite, shows score, rewritten, alternatives, Copy button.
+
+Greenlight form → calls /api/greenlight, shows a big traffic light indicator with reason/next_step.
+
+Persist last inputs in localStorage.
+
+Add a small header with app name RELOVE AI and a link to /api/health.
+
+Create a tiny fetch helper that reads VITE_API_URL (default http://localhost:3000).
+
+Provide web/package.json scripts:
+
+json
+Copiar código
+{ "scripts": { "dev":"vite", "build":"vite build", "preview":"vite preview" } }
+Install: react react-dom + @types/react @types/react-dom.
+
+Tests
+Add server/tests/rules.test.ts with unit tests for:
+
+greenlight: red on blocked; green on positive+>=48h+calm.
+
+dailyAction: day<7 → not message; neutral+>=48h → message.
+
+safetext: removes "please reply", "can't live without you".
+
+npm run test must pass.
+
+README.md (write it)
+Project overview.
+
+How to run locally (two terminals: server and web).
+
+How to build and serve prod (server serves /web/dist).
+
+Env variables, including PROMPT_ID and how to get it from OpenAI Platform.
+
+Example curl commands for all endpoints.
+
+Acceptance criteria (do NOT skip)
+Running npm i in /server and /web, then:
+
+cd server && npm run dev → logs: 🚀 RELOVE AI backend running on http://localhost:3000.
+
+cd web && npm run dev → opens Vite dev server. UI forms work and display JSON results.
+
+GET /api/health returns { ok: true, service: "relove-ai", time: "<iso>" }.
+
+Each POST endpoint returns valid JSON exactly as specified.
+
+Lint and tests run successfully.
+
+In production build: server serves static files from /web/dist.
+
+Guardrails for the Agent
+Do not change unrelated files once created unless asked.
+
+Prefer small, well-factored modules in lib/rules.
+
+Keep code comments succinct and useful.
+
+Use TypeScript types in server/lib/types.ts for all payloads and responses.
+
+Handle errors with 400/500 and helpful JSON messages.
+
+When finished, print a concise summary with:
+
+how to run dev,
+
+how to test the three endpoints,
+
+where to paste .env,
+
+and an example request/response for each endpoint.
+
+Copiar código
